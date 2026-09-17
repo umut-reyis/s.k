@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Minecraft Mobil 3D - Multiplayer</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; user-select: none; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #main-menu {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6)), url('https://imgur.com/393W72r.png') center/cover;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; color: white;
+        }
+        .menu-btn { background: #7289da; color: white; border: none; padding: 12px 24px; font-size: 16px; font-weight: bold; border-radius: 6px; margin: 8px; cursor: pointer; width: 250px; text-align: center; }
+        .menu-input { padding: 12px; font-size: 15px; border-radius: 6px; border: none; margin: 6px; width: 230px; text-align: center; }
+        .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(30, 30, 30, 0.95); padding: 20px; border-radius: 10px; border: 2px solid #555; z-index: 110; color: white; width: 320px; max-height: 80vh; overflow-y: auto; }
+        #hud { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.75); color: white; padding: 8px 12px; font-size: 12px; border-radius: 8px; text-align: center; z-index: 10; display: none; }
+        #top-controls { position: absolute; top: 10px; right: 10px; display: flex; gap: 8px; z-index: 10; display: none; }
+        .top-btn { background: rgba(0,0,0,0.6); color: white; border: 2px solid white; padding: 8px 12px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 12px; }
+        #crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 24px; font-weight: bold; pointer-events: none; z-index: 10; text-shadow: 0 0 2px black; display: none; }
+        #hotbar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: none; background: rgba(0, 0, 0, 0.5); padding: 6px; border-radius: 12px; z-index: 10; }
+        .slot { width: 44px; height: 44px; background: #8b8b8b; border: 3px solid #373737; margin: 0 2px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; font-size: 10px; color: white; text-align: center; word-break: break-all; }
+        .slot.active { border-color: #ffffff; transform: scale(1.05); }
+        #gun-fps { position: absolute; bottom: 0; right: 10%; width: 180px; height: auto; pointer-events: none; z-index: 15; display: none; image-rendering: pixelated; }
+        #joystick-base { position: absolute; bottom: 30px; left: 30px; width: 110px; height: 110px; background: rgba(255, 255, 255, 0.15); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; touch-action: none; z-index: 10; display: none; }
+        #joystick-stick { position: absolute; top: 30px; left: 30px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.5); border-radius: 50%; pointer-events: none; }
+    </style>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="main-menu">
+        <h1>MINECRAFT MOBIL 3D</h1>
+        <div id="auth-choice-section">
+            <button class="menu-btn" onclick="showLoginPanel()">Giriş Yap</button>
+            <button class="menu-btn" onclick="showRegisterPanel()">Kaydol</button>
+        </div>
+
+        <div id="register-panel" style="display:none; text-align:center;">
+            <h3>Hesap Oluştur</h3>
+            <input type="text" id="reg-username" class="menu-input" placeholder="Kullanıcı Adı" /><br>
+            <input type="password" id="reg-password" class="menu-input" placeholder="Şifre" /><br>
+            <button class="menu-btn" style="background:#4CAF50;" onclick="completeRegister()">Kaydol ve Başla</button><br>
+            <br><button style="background:none; border:none; color:#aaa; cursor:pointer;" onclick="backToChoice()">← Geri Dön</button>
+        </div>
+
+        <div id="login-panel" style="display:none; text-align:center;">
+            <h3>Hesaba Giriş Yap</h3>
+            <input type="text" id="login-username" class="menu-input" placeholder="Kullanıcı Adı" /><br>
+            <input type="password" id="login-password" class="menu-input" placeholder="Şifre" /><br>
+            <button class="menu-btn" style="background:#4CAF50;" onclick="completeLogin()">Giriş Yap</button><br>
+            <br><button style="background:none; border:none; color:#aaa; cursor:pointer;" onclick="backToChoice()">← Geri Dön</button>
+        </div>
+
+        <div id="logged-section" style="display:none; text-align:center;">
+            <p id="welcome-msg" style="font-weight:bold; color:#55ff55; font-size:18px;"></p>
+            <button class="menu-btn" onclick="openWorldMenu()">🌍 Dünyalarım / Sunucular</button>
+            <button class="menu-btn" style="background:#f44336;" onclick="logout()">🚪 Oturumu Kapat</button>
+        </div>
+    </div>
+
+    <div id="world-modal" class="modal">
+        <h3>Dünyalar</h3>
+        <div style="margin-bottom:10px;">
+            <input type="text" id="new-world-name" placeholder="Dünya Adı..." style="width:60%; padding:6px;" />
+            <button onclick="createNewWorld()" style="width:35%; padding:6px; background:#4CAF50; color:white; border:none; border-radius:4px;">+ Yeni Aç</button>
+        </div>
+        <div id="world-list" style="margin-bottom: 15px;"></div>
+        <button class="menu-btn" onclick="closeModals()">Kapat</button>
+    </div>
+
+    <div id="crosshair">+</div>
+    <div id="hud">
+        <div id="status-text">Oyun Başlatıldı</div>
+        <div id="mod-input-container" style="margin-top:5px; display:none;">
+            <input type="file" id="modFile" accept="*" style="display: none;" onchange="loadModPackage(this)" />
+            <button id="mod-btn" onclick="document.getElementById('modFile').click()">📦 Mod Paketi Yükle (.scpack/.zip)</button>
+        </div>
+    </div>
+
+    <div id="top-controls">
+        <button class="top-btn" id="third-person-btn" onclick="toggleThirdPerson()">🎥 Kamera</button>
+        <button class="top-btn" style="background:#d9534f;" onclick="leaveGame()">🚪 Çıkış</button>
+    </div>
+
+    <img id="gun-fps" alt="Silah Görseli" />
+    <div id="joystick-base"><div id="joystick-stick"></div></div>
+
+    <div id="hotbar">
+        <div class="slot active" id="slot-0" onclick="selectSlot(0)">1</div>
+        <div class="slot" id="slot-1" onclick="selectSlot(1)">2</div>
+        <div class="slot" id="slot-2" onclick="selectSlot(2)">3</div>
+        <div class="slot" id="slot-3" onclick="selectSlot(3)">4</div>
+        <div class="slot" id="slot-4" onclick="selectSlot(4)">5</div>
+    </div>
+
+    <script>
+        // SUNUCU BAĞLANTISI (Render URL'inizi Buraya Yapıştırın)
+        const socket = io("RENDER_SUNUCU_URLINIZ");
+
+        let registeredUsers = JSON.parse(localStorage.getItem("mc_registeredUsers")) || {};
+        let currentUsername = localStorage.getItem("mc_currentUsername") || "";
+        let userWorlds = JSON.parse(localStorage.getItem("mc_userWorlds")) || ["Dünyam 1"];
+        
+        let isHost = false, isThirdPerson = false;
+        let cameraDistance = 5, thirdPersonAngle = 0;
+        let inventory = [null, null, null, null, null], currentSlot = 0;
+        let otherPlayers = {};
+
+        window.onload = function() {
+            if(currentUsername && registeredUsers[currentUsername.toLowerCase()]) showLoggedSection();
+        };
+
+        function saveToStorage() {
+            localStorage.setItem("mc_registeredUsers", JSON.stringify(registeredUsers));
+            localStorage.setItem("mc_currentUsername", currentUsername);
+            localStorage.setItem("mc_userWorlds", JSON.stringify(userWorlds));
+        }
+
+        function showLoginPanel() { document.getElementById("auth-choice-section").style.display = "none"; document.getElementById("login-panel").style.display = "block"; }
+        function showRegisterPanel() { document.getElementById("auth-choice-section").style.display = "none"; document.getElementById("register-panel").style.display = "block"; }
+        function backToChoice() { document.getElementById("login-panel").style.display = "none"; document.getElementById("register-panel").style.display = "none"; document.getElementById("auth-choice-section").style.display = "block"; }
+
+        function showLoggedSection() {
+            document.getElementById("auth-choice-section").style.display = "none";
+            document.getElementById("login-panel").style.display = "none";
+            document.getElementById("register-panel").style.display = "none";
+            document.getElementById("logged-section").style.display = "block";
+            document.getElementById("welcome-msg").innerText = "Hoş geldin, " + currentUsername;
+        }
+
+        function completeRegister() {
+            let u = document.getElementById("reg-username").value.trim(), p = document.getElementById("reg-password").value.trim();
+            if(!u || !p) return alert("Bilgileri girin!");
+            if(registeredUsers[u.toLowerCase()]) return alert("Bu ad zaten var!");
+            registeredUsers[u.toLowerCase()] = { password: p };
+            currentUsername = u; saveToStorage(); showLoggedSection();
+        }
+
+        function completeLogin() {
+            let u = document.getElementById("login-username").value.trim(), p = document.getElementById("login-password").value.trim();
+            if(!registeredUsers[u.toLowerCase()] || registeredUsers[u.toLowerCase()].password !== p) return alert("Yanlış bilgi!");
+            currentUsername = u; saveToStorage(); showLoggedSection();
+        }
+
+        function logout() { currentUsername = ""; localStorage.removeItem("mc_currentUsername"); document.getElementById("logged-section").style.display = "none"; document.getElementById("auth-choice-section").style.display = "block"; }
+        function openWorldMenu() { document.getElementById("world-modal").style.display = "block"; renderWorldList(); }
+        function closeModals() { document.querySelectorAll('.modal').forEach(m => m.style.display = 'none'); }
+
+        function createNewWorld() {
+            let input = document.getElementById("new-world-name"), name = input.value.trim();
+            if(!name) return;
+            userWorlds.push(name); saveToStorage(); input.value = ""; renderWorldList();
+        }
+
+        function renderWorldList() {
+            let container = document.getElementById("world-list"); container.innerHTML = "";
+            userWorlds.forEach((w) => {
+                container.innerHTML += `<div style="background:rgba(255,255,255,0.1); padding:8px; border-radius:5px; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center;">
+                    <span>${w}</span><button class="menu-btn" style="width:auto; padding:5px 10px; margin:0;" onclick="startWorld('${w}', true)">Oyna</button></div>`;
+            });
+        }
+
+        function startWorld(worldName, hostStatus) {
+            isHost = hostStatus; closeModals();
+            document.getElementById("main-menu").style.display = "none";
+            document.getElementById("hud").style.display = "block";
+            document.getElementById("top-controls").style.display = "flex";
+            document.getElementById("crosshair").style.display = "block";
+            document.getElementById("hotbar").style.display = "flex";
+            document.getElementById("joystick-base").style.display = "block";
+            if(isHost) document.getElementById("mod-input-container").style.display = "block";
+
+            socket.emit('joinGame', { username: currentUsername });
+        }
+
+        function addItemToInventory(item) {
+            let emptySlot = inventory.findIndex(i => i === null);
+            if(emptySlot !== -1) {
+                inventory[emptySlot] = item; updateHotbarUI();
+                alert(`"${item.name}" Envanter ${emptySlot + 1}. Slota Eklendi!`);
+            } else alert("Envanter dolu!");
+        }
+
+        function updateHotbarUI() {
+            for(let i = 0; i < 5; i++) {
+                let slot = document.getElementById(`slot-${i}`);
+                slot.innerText = inventory[i] ? inventory[i].name : (i + 1).toString();
+            }
+            checkActiveSlotItem();
+        }
+
+        function selectSlot(index) {
+            currentSlot = index;
+            document.querySelectorAll('.slot').forEach((s, i) => s.classList.toggle('active', i === index));
+            checkActiveSlotItem();
+        }
+
+        function checkActiveSlotItem() {
+            let currentItem = inventory[currentSlot], gunImg = document.getElementById("gun-fps");
+            if(currentItem && currentItem.type === "silah") {
+                gunImg.src = currentItem.texture || 'https://imgur.com/393W72r.png';
+                gunImg.style.display = "block";
+            } else gunImg.style.display = "none";
+        }
+
+        function loadModPackage(input) {
+            let file = input.files[0]; if(!file) return;
+            let zip = new JSZip();
+            zip.loadAsync(file).then(async function(zipContent) {
+                let files = Object.keys(zipContent.files);
+                let silahKey = files.find(f => f.toLowerCase().endsWith("silah.modu") || f.toLowerCase().endsWith("silah.json"));
+                if (silahKey) {
+                    let content = await zipContent.file(silahKey).async("string");
+                    let modData = {}; try { modData = JSON.parse(content); } catch(e){}
+                    let imgKey = files.find(f => f.toLowerCase().endsWith(".png"));
+                    let imgUrl = imgKey ? URL.createObjectURL(await zipContent.file(imgKey).async("blob")) : 'https://i.imgur.com/8Q4Q1L2.png';
+                    let audioKey = files.find(f => f.toLowerCase().endsWith(".mp3"));
+                    let audioUrl = audioKey ? URL.createObjectURL(await zipContent.file(audioKey).async("blob")) : null;
+
+                    addItemToInventory({ type: "silah", name: modData.isim || "AK-47", texture: imgUrl, audio: audioUrl });
+                }
+            });
+        }
+
+        function leaveGame() { location.reload(); }
+        function toggleThirdPerson() {
+            isThirdPerson = !isThirdPerson;
+            document.getElementById("third-person-btn").style.background = isThirdPerson ? "#4CAF50" : "rgba(0,0,0,0.6)";
+            document.getElementById("crosshair").style.display = isThirdPerson ? "none" : "block";
+        }
+
+        // THREE.JS OYUN MOTORU
+        const scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5); dirLight.position.set(10, 20, 10); scene.add(dirLight);
+
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x55aa55 }));
+        plane.rotation.x = -Math.PI / 2; scene.add(plane);
+
+        const objects = [plane], boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const playerMesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), new THREE.MeshStandardMaterial({ color: 0x3366cc }));
+        playerMesh.position.set(0, 0.9, 0); scene.add(playerMesh);
+
+        // MULTIPLAYER EVENTS
+        socket.on('playerJoined', (pData) => {
+            let pMesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+            scene.add(pMesh); otherPlayers[pData.id] = pMesh;
+        });
+
+        socket.on('playerMoved', (pData) => {
+            if(otherPlayers[pData.id]) otherPlayers[pData.id].position.set(pData.x, pData.y, pData.z);
+        });
+
+        socket.on('blockPlaced', (bData) => {
+            let block = new THREE.Mesh(boxGeo, new THREE.MeshStandardMaterial({ color: bData.color || 0x8b5a2b }));
+            block.position.set(bData.x, bData.y, bData.z); scene.add(block); objects.push(block);
+        });
+
+        socket.on('playerLeft', (id) => {
+            if(otherPlayers[id]) { scene.remove(otherPlayers[id]); delete otherPlayers[id]; }
+        });
+
+        const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2(0, 0);
+        window.addEventListener('touchstart', (e) => {
+            if(e.touches.length > 0 && e.touches[0].clientX > window.innerWidth / 3 && document.getElementById("hud").style.display === "block") {
+                let activeItem = inventory[currentSlot];
+                if (activeItem) {
+                    if (activeItem.type === "silah") {
+                        if (activeItem.audio) new Audio(activeItem.audio).play().catch(()=>{});
+                        socket.emit('shootGun', { audio: activeItem.audio });
+                    } else if (activeItem.type === "blok") {
+                        raycaster.setFromCamera(mouse, camera);
+                        let intersects = raycaster.intersectObjects(objects);
+                        if (intersects.length > 0) {
+                            let pos = new THREE.Vector3().copy(intersects[0].point).add(intersects[0].face.normal.clone().multiplyScalar(0.5));
+                            let blockData = { x: Math.floor(pos.x)+0.5, y: Math.floor(pos.y)+0.5, z: Math.floor(pos.z)+0.5, color: activeItem.color || 0x8b5a2b };
+                            socket.emit('placeBlock', blockData);
+                        }
+                    }
+                }
+            }
+        });
+
+        let touchX = 0, touchY = 0, cameraAngleX = 0, cameraAngleY = 0.2;
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 1 && e.touches[0].clientX > window.innerWidth / 3) {
+                let deltaX = e.touches[0].clientX - touchX, deltaY = e.touches[0].clientY - touchY;
+                if(isThirdPerson) thirdPersonAngle -= deltaX * 0.005;
+                else {
+                    cameraAngleX -= deltaX * 0.005; cameraAngleY -= deltaY * 0.005;
+                    cameraAngleY = Math.max(-1.4, Math.min(1.4, cameraAngleY));
+                }
+            }
+            touchX = e.touches[0].clientX; touchY = e.touches[0].clientY;
+        });
+
+        let moveForward = 0, moveSideways = 0;
+        const joystickBase = document.getElementById('joystick-base'), joystickStick = document.getElementById('joystick-stick');
+        joystickBase.addEventListener('touchmove', (e) => {
+            let rect = joystickBase.getBoundingClientRect();
+            let dx = e.touches[0].clientX - (rect.left + rect.width / 2), dy = e.touches[0].clientY - (rect.top + rect.height / 2);
+            let dist = Math.sqrt(dx*dx + dy*dy);
+            if(dist > 40) { dx = (dx/dist)*40; dy = (dy/dist)*40; }
+            joystickStick.style.transform = `translate(${dx}px, ${dy}px)`;
+            moveSideways = dx / 40; moveForward = -dy / 40;
+        });
+        joystickBase.addEventListener('touchend', () => { joystickStick.style.transform = `translate(0px, 0px)`; moveForward = 0; moveSideways = 0; });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if(moveForward !== 0 || moveSideways !== 0) {
+                playerMesh.position.x += (Math.sin(cameraAngleX) * moveForward + Math.cos(cameraAngleX) * moveSideways) * 0.08;
+                playerMesh.position.z -= (Math.cos(cameraAngleX) * moveForward - Math.sin(cameraAngleX) * moveSideways) * 0.08;
+                socket.emit('playerMove', { x: playerMesh.position.x, y: playerMesh.position.y, z: playerMesh.position.z });
+            }
+
+            if (isThirdPerson) {
+                camera.position.x = playerMesh.position.x + Math.sin(thirdPersonAngle) * cameraDistance;
+                camera.position.y = playerMesh.position.y + 2.5;
+                camera.position.z = playerMesh.position.z - Math.cos(thirdPersonAngle) * cameraDistance;
+                camera.lookAt(playerMesh.position.x, playerMesh.position.y + 1, playerMesh.position.z);
+            } else {
+                camera.position.set(playerMesh.position.x, playerMesh.position.y + 0.8, playerMesh.position.z);
+                let targetX = camera.position.x + Math.sin(cameraAngleX) * Math.cos(cameraAngleY) * 10;
+                let targetY = camera.position.y + Math.sin(cameraAngleY) * 10;
+                let targetZ = camera.position.z - Math.cos(cameraAngleX) * Math.cos(cameraAngleY) * 10;
+                camera.lookAt(targetX, targetY, targetZ);
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
